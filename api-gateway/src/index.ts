@@ -13,7 +13,7 @@ const JWT_SECRET = 'secreto_super_seguro_para_la_clase';
 
 app.use(express.json());
 
-// Middleware de autenticación centralizada (Simulación)
+// Middleware de autenticación centralizada
 const verificarToken = (rolesPermitidos?: string[]) => {
   return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
     const authHeader = req.headers.authorization;
@@ -24,14 +24,8 @@ const verificarToken = (rolesPermitidos?: string[]) => {
 
     const token = authHeader.split(' ')[1];
     try {
-      // En un escenario real verificarías con jwt.verify(token, JWT_SECRET)
-      // Para la simulación de la clase, decodificamos un token ficticio
-      const decoded = jwt.decode(token) as { id_usuario: string; rol: string } | null;
-      
-      if (!decoded) {
-         res.status(401).json({ error: 'Token corrupto' });
-         return;
-      }
+      // CORRECCIÓN: Ahora sí verificamos la firma real con la clave secreta
+      const decoded = jwt.verify(token, JWT_SECRET) as { id_usuario: string; rol: string };
 
       // Validar roles si la ruta lo requiere (ej. Solo Administrador)
       if (rolesPermitidos && !rolesPermitidos.includes(decoded.rol)) {
@@ -39,42 +33,34 @@ const verificarToken = (rolesPermitidos?: string[]) => {
          return;
       }
 
-      // Inyectar los datos en los headers para que los microservicios internos los lean
+      // Inyectar los datos en los headers para los microservicios internos
       req.headers['x-user-id'] = decoded.id_usuario;
       req.headers['x-user-role'] = decoded.rol;
       next();
     } catch (error) {
-       res.status(401).json({ error: 'Token inválido' });
+       res.status(401).json({ error: 'Token inválido o firma incorrecta' });
     }
   };
 };
 
-// --- RUTAS DE MASCOTAS ---
-// GET /mascotas -> Público
-app.use('/mascotas', (req, res, next) => {
-  if (req.method === 'GET') {
-    return proxy(SERVICIO_MASCOTAS)(req, res, next);
-  }
-  next();
-});
+// --- RUTAS DE MASCOTAS (Mapeadas explícitamente para evitar el error 404) ---
+
+// GET /mascotas -> Público (Cualquiera puede ver)
+app.get('/mascotas', proxy(SERVICIO_MASCOTAS));
 
 // POST /mascotas -> Solo Administrador
-app.use('/mascotas', verificarToken(['Administrador']), proxy(SERVICIO_MASCOTAS));
+app.post('/mascotas', verificarToken(['Administrador']), proxy(SERVICIO_MASCOTAS));
 
-// --- RUTAS DE SOLICITUDES ---
+
+// --- RUTAS DE SOLICITUDES (Mapeadas explícitamente) ---
+
 // POST /solicitudes -> Usuario Autenticado
-app.use('/solicitudes', (req, res, next) => {
-  if (req.method === 'POST') {
-    return verificarToken()(req, res, next);
-  }
-  next();
-}, (req, res, next) => {
-  if (req.method === 'GET') {
-    return verificarToken(['Administrador'])(req, res, next);
-  }
-  next();
-}, proxy(SERVICIO_SOLICITUDES));
+app.post('/solicitudes', verificarToken(), proxy(SERVICIO_SOLICITUDES));
+
+// GET /solicitudes -> Solo Administrador
+app.get('/solicitudes', verificarToken(['Administrador']), proxy(SERVICIO_SOLICITUDES));
+
 
 app.listen(PORT, () => {
-  console.log(`🚀 API Gateway corriendo en el puerto ${PORT}`);
+  console.log(` API Gateway corriendo en el puerto ${PORT}`);
 });
