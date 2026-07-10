@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # --- BASES DE DATOS ---
+  db-mascotas:
+    image: mysql:latest
+    container_name: db-mascotas
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password_seguro
+      MYSQL_DATABASE: mascotas_db
+      MYSQL_USER: usuario_mascotas
+      MYSQL_PASSWORD: password_mascotas
+    ports:
+      - "3306:3306"
+    networks:
+      - red-refugio
+
+  db-solicitudes:
+    image: postgres:15.3-alpine
+    container_name: db-solicitudes
+    environment:
+      POSTGRES_USER: usuario_adopcion
+      POSTGRES_PASSWORD: password_seguro
+      POSTGRES_DB: solicitudes_db
+    ports:
+      - "5432:5432"
+    networks:
+      - red-refugio
+
+  # --- MICROSERVICIOS ---
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - SERVICIO_MASCOTAS_URL=http://servicio-mascotas:3001
+      - SERVICIO_SOLICITUDES_URL=http://servicio-solicitudes:3002
+    depends_on:
+      - servicio-mascotas
+      - servicio-solicitudes
+    networks:
+      - red-refugio
+
+  servicio-mascotas:
+    build: ./servicio-mascotas
+    container_name: servicio-mascotas
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - DATABASE_URL=mysql://usuario_mascotas:password_mascotas@db-mascotas:3306/mascotas_db
+    depends_on:
+      - db-mascotas
+    networks:
+      - red-refugio
+
+  servicio-solicitudes:
+    build: ./servicio-solicitudes
+    container_name: servicio-solicitudes
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - DATABASE_URL=postgresql://usuario_adopcion:password_seguro@db-solicitudes:5432/solicitudes_db
+      - SERVICIO_MASCOTAS_URL=http://servicio-mascotas:3001
+    depends_on:
+      - db-solicitudes
+    networks:
+      - red-refugio
+
+networks:
+  red-refugio:
+    driver: bridge
