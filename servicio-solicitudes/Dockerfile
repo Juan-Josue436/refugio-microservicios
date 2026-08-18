@@ -1,4 +1,4 @@
-# Usamos una imagen ligera de Node.js
+# aqui usamos una imagen ligera de Node.js
 FROM node:18-alpine
 
 # Creamos el directorio de trabajo
