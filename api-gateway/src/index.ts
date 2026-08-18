@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 const SERVICIO_MASCOTAS = process.env.SERVICIO_MASCOTAS_URL || 'http://servicio-mascotas:3001';
 const SERVICIO_SOLICITUDES = process.env.SERVICIO_SOLICITUDES_URL || 'http://servicio-solicitudes:3002';
 
-const JWT_SECRET = 'secreto_super_seguro_para_la_clase';
+const JWT_SECRET = process.env.JWT_SECRET || 'secreto_super_seguro_para_la_clase';
 
 app.use(express.json());
 
