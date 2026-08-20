@@ -1,95 +1,113 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
+import { Pool } from 'pg';
+import axios from 'axios';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
+
+const SERVICIO_MASCOTAS_URL = process.env.SERVICIO_MASCOTAS_URL || 'http://servicio-mascotas:3001';
 
 app.use(express.json());
 
-// Configuración de la conexión a MySQL usando la variable de entorno
-const dbConfig = {
-  host: 'db-mascotas', // Nombre del contenedor en docker-compose
-  user: 'usuario_mascotas',
-  password: 'password_mascotas',
-  database: 'mascotas_db',
-  port: 3306
-};
+// Configuración de conexión a PostgreSQL usando variables de entorno con fallbacks
+const dbUser = process.env.DB_USER || process.env.POSTGRES_USER || 'postgres';
+const dbPassword = process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgrespassword';
+const dbHost = process.env.DB_HOST || process.env.POSTGRES_HOST || 'db-solicitudes';
+const dbName = process.env.DB_NAME || process.env.POSTGRES_DB || 'solicitudes_db';
 
-// Inicialización de la tabla para asegurar que exista al arrancar
+const connectionString = process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:5432/${dbName}`;
+
+const pool = new Pool({ connectionString });
+
 async function initDB() {
   try {
-    const connection = await mysql.createConnection({
-      host: dbConfig.host,
-      user: dbConfig.user,
-      password: dbConfig.password,
-      port: dbConfig.port
-    });
-    await connection.query(`CREATE DATABASE IF NOT EXISTS ${dbConfig.database};`);
-    await connection.end();
-
-    const pool = await mysql.createPool(dbConfig);
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS mascotas (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
-        especie VARCHAR(50) NOT NULL,
-        edad VARCHAR(50) NOT NULL,
-        estado VARCHAR(50) NOT NULL,
-        fotoUrl VARCHAR(255)
+      CREATE TABLE IF NOT EXISTS solicitudes (
+        id SERIAL PRIMARY KEY,
+        id_usuario VARCHAR(255) NOT NULL,
+        id_mascota VARCHAR(255) NOT NULL,
+        mensaje TEXT NOT NULL,
+        estado VARCHAR(50) NOT NULL
       );
     `);
-    console.log('✅ Base de datos MySQL de Mascotas inicializada correctamente.');
-    return pool;
+    console.log('✅ Base de datos PostgreSQL de Solicitudes inicializada correctamente.');
   } catch (error) {
-    console.error('❌ Error inicializando MySQL, reintentando en 5s...', error);
+    console.error('❌ Error conectando a Postgres, reintentando en 5s...', error);
     await new Promise(resolve => setTimeout(resolve, 5000));
     return initDB();
   }
 }
+initDB();
 
-let pool: mysql.Pool;
-initDB().then(p => pool = p);
-
-// GET /mascotas - Obtiene todas las disponibles
-app.get('/mascotas', async (req, res) => {
+// POST /solicitudes - Crea una solicitud de adopción (CON VALIDACIONES DE ENTRADA)
+app.post('/solicitudes', async (req, res): Promise<void> => {
   try {
-    const [rows] = await pool.query('SELECT * FROM mascotas WHERE estado = ?', ['Disponible']);
-    res.json(rows);
-  } catch (error) {
-    res.status(500).json({ error: 'Error al obtener mascotas' });
-  }
-});
+    const id_usuario = req.headers['x-user-id'] as string; // Extraído previamente por el Gateway
+    const { id_mascota, mensaje } = req.body;
 
-// GET /mascotas/:id - Endpoint interno síncrono usado por el servicio de solicitudes
-app.get('/mascotas/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const [rows]: any = await pool.query('SELECT * FROM mascotas WHERE id = ?', [id]);
-    
-    if (rows.length === 0) {
-       res.status(404).json({ error: 'Mascota no encontrada' });
-       return;
+    // 1. VALIDACIÓN: Verificar identificación del usuario (inyectado por el API Gateway)
+    if (!id_usuario) {
+      res.status(401).json({ error: 'Acceso no autorizado: Usuario no identificado' });
+      return;
     }
-    res.json(rows[0]);
+
+    // 2. VALIDACIÓN: Presencia de campos obligatorios
+    if (!id_mascota || !mensaje) {
+      res.status(400).json({ 
+        error: 'Petición incorrecta: Se requiere id_mascota y un mensaje para la solicitud.' 
+      });
+      return;
+    }
+
+    // 3. VALIDACIÓN: Longitud y formato del mensaje
+    if (typeof mensaje !== 'string' || mensaje.trim().length < 10) {
+      res.status(400).json({ 
+        error: 'El mensaje de la solicitud debe ser un texto explicativo de al menos 10 caracteres.' 
+      });
+      return;
+    }
+
+    // --- COMUNICACIÓN SÍNCRONA INTER-SERVICIO ---
+    try {
+      const respuestaMascota = await axios.get(`${SERVICIO_MASCOTAS_URL}/mascotas/${id_mascota}`);
+      const mascota = respuestaMascota.data;
+
+      if (mascota.estado !== 'Disponible') {
+        res.status(400).json({ error: 'La mascota no se encuentra disponible para adopción' });
+        return;
+      }
+    } catch (error: any) {
+      if (error.response && error.response.status === 404) {
+        res.status(404).json({ error: 'La mascota solicitada no existe' });
+        return;
+      }
+      res.status(503).json({ error: 'No se pudo validar la mascota debido a un error de comunicación interna' });
+      return;
+    }
+
+    // Si todas las validaciones pasan, se guarda en PostgreSQL
+    const query = 'INSERT INTO solicitudes (id_usuario, id_mascota, mensaje, estado) VALUES ($1, $2, $3, $4) RETURNING *';
+    const values = [id_usuario, id_mascota, mensaje.trim(), 'Pendiente'];
+    const result = await pool.query(query, values);
+
+    res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: 'Error interno en servicio de mascotas' });
+    console.error('Error en POST /solicitudes:', error);
+    res.status(500).json({ error: 'Error interno al procesar la solicitud' });
   }
 });
 
-// POST /mascotas - Registra una nueva mascota
-app.post('/mascotas', async (req, res) => {
+// GET /solicitudes - Ver todas las solicitudes (Solo Administrador, filtrado en Gateway)
+app.get('/solicitudes', async (req, res) => {
   try {
-    const { nombre, especie, edad, estado, fotoUrl } = req.body;
-    const [result]: any = await pool.query(
-      'INSERT INTO mascotas (nombre, especie, edad, estado, fotoUrl) VALUES (?, ?, ?, ?, ?)',
-      [nombre, especie, edad, estado || 'Disponible', fotoUrl]
-    );
-    res.status(201).json({ id: result.insertId, nombre, especie, edad, estado, fotoUrl });
+    const result = await pool.query('SELECT * FROM solicitudes');
+    res.json(result.rows);
   } catch (error) {
-    res.status(500).json({ error: 'Error al registrar la mascota' });
+    console.error('Error en GET /solicitudes:', error);
+    res.status(500).json({ error: 'Error al obtener las solicitudes' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`🐾 Servicio de Mascotas escuchando en el puerto ${PORT}`);
+  console.log(`📋 Servicio de Solicitudes escuchando en el puerto ${PORT}`);
 });
