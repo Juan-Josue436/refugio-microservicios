@@ -9,10 +9,15 @@ const SERVICIO_MASCOTAS_URL = process.env.SERVICIO_MASCOTAS_URL || 'http://servi
 
 app.use(express.json());
 
-// Configuración de PostgreSQL usando la URL de conexión de Docker Compose
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://usuario_adopcion:password_seguro@db-solicitudes:5432/solicitudes_db'
-});
+// Configuración de conexión a PostgreSQL usando variables de entorno con fallbacks
+const dbUser = process.env.DB_USER || process.env.POSTGRES_USER || 'postgres';
+const dbPassword = process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgrespassword';
+const dbHost = process.env.DB_HOST || process.env.POSTGRES_HOST || 'db-solicitudes';
+const dbName = process.env.DB_NAME || process.env.POSTGRES_DB || 'solicitudes_db';
+
+const connectionString = process.env.DATABASE_URL || `postgresql://${dbUser}:${dbPassword}@${dbHost}:5432/${dbName}`;
+
+const pool = new Pool({ connectionString });
 
 async function initDB() {
   try {
@@ -25,7 +30,7 @@ async function initDB() {
         estado VARCHAR(50) NOT NULL
       );
     `);
-    console.log('✅ Base de datos PostgreSQL de Solicitudes inicializada.');
+    console.log('✅ Base de datos PostgreSQL de Solicitudes inicializada correctamente.');
   } catch (error) {
     console.error('❌ Error conectando a Postgres, reintentando en 5s...', error);
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -34,43 +39,61 @@ async function initDB() {
 }
 initDB();
 
-// POST /solicitudes - Crea una solicitud de adopción
+// POST /solicitudes - Crea una solicitud de adopción (CON VALIDACIONES DE ENTRADA)
 app.post('/solicitudes', async (req, res): Promise<void> => {
   try {
     const id_usuario = req.headers['x-user-id'] as string; // Extraído previamente por el Gateway
     const { id_mascota, mensaje } = req.body;
 
+    // 1. VALIDACIÓN: Verificar identificación del usuario (inyectado por el API Gateway)
     if (!id_usuario) {
-       res.status(401).json({ error: 'Usuario no identificado' });
-       return;
+      res.status(401).json({ error: 'Acceso no autorizado: Usuario no identificado' });
+      return;
     }
 
-    // --- COMUNICACIÓN SÍNCRONA INTER-SERVICIO (Paso crucial de tu reporte) ---
+    // 2. VALIDACIÓN: Presencia de campos obligatorios
+    if (!id_mascota || !mensaje) {
+      res.status(400).json({ 
+        error: 'Petición incorrecta: Se requiere id_mascota y un mensaje para la solicitud.' 
+      });
+      return;
+    }
+
+    // 3. VALIDACIÓN: Longitud y formato del mensaje
+    if (typeof mensaje !== 'string' || mensaje.trim().length < 10) {
+      res.status(400).json({ 
+        error: 'El mensaje de la solicitud debe ser un texto explicativo de al menos 10 caracteres.' 
+      });
+      return;
+    }
+
+    // --- COMUNICACIÓN SÍNCRONA INTER-SERVICIO ---
     try {
       const respuestaMascota = await axios.get(`${SERVICIO_MASCOTAS_URL}/mascotas/${id_mascota}`);
       const mascota = respuestaMascota.data;
 
       if (mascota.estado !== 'Disponible') {
-         res.status(400).json({ error: 'La mascota no se encuentra disponible para adopción' });
-         return;
+        res.status(400).json({ error: 'La mascota no se encuentra disponible para adopción' });
+        return;
       }
     } catch (error: any) {
       if (error.response && error.response.status === 404) {
-         res.status(404).json({ error: 'La mascota solicitada no existe' });
-         return;
+        res.status(404).json({ error: 'La mascota solicitada no existe' });
+        return;
       }
-       res.status(503).json({ error: 'No se pudo validar la mascota debido a un error interno del sistema' });
-       return;
+      res.status(503).json({ error: 'No se pudo validar la mascota debido a un error de comunicación interna' });
+      return;
     }
 
-    // Si todo es válido, guardamos en la persistencia aislada de este servicio
+    // Si todas las validaciones pasan, se guarda en PostgreSQL
     const query = 'INSERT INTO solicitudes (id_usuario, id_mascota, mensaje, estado) VALUES ($1, $2, $3, $4) RETURNING *';
-    const values = [id_usuario, id_mascota, mensaje, 'Pendiente'];
+    const values = [id_usuario, id_mascota, mensaje.trim(), 'Pendiente'];
     const result = await pool.query(query, values);
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    res.status(500).json({ error: 'Error al procesar la solicitud' });
+    console.error('Error en POST /solicitudes:', error);
+    res.status(500).json({ error: 'Error interno al procesar la solicitud' });
   }
 });
 
@@ -80,6 +103,7 @@ app.get('/solicitudes', async (req, res) => {
     const result = await pool.query('SELECT * FROM solicitudes');
     res.json(result.rows);
   } catch (error) {
+    console.error('Error en GET /solicitudes:', error);
     res.status(500).json({ error: 'Error al obtener las solicitudes' });
   }
 });
