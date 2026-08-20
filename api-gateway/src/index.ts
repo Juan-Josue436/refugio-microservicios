@@ -1,66 +1,169 @@
-import express from 'express';
-import proxy from 'express-http-proxy';
-import jwt from 'jsonwebtoken';
+import express, { Request, Response } from 'express';
+import dotenv from 'dotenv';
+import cors from 'cors';
+import axios from 'axios';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// URLs internas de Docker obtenidas de las variables de entorno
-const SERVICIO_MASCOTAS = process.env.SERVICIO_MASCOTAS_URL || 'http://servicio-mascotas:3001';
-const SERVICIO_SOLICITUDES = process.env.SERVICIO_SOLICITUDES_URL || 'http://servicio-solicitudes:3002';
+// URLs de los microservicios (usan los nombres de servicio de Docker Compose)
+const SERVICIO_MASCOTAS_URL = process.env.SERVICIO_MASCOTAS_URL || 'http://servicio-mascotas:3001';
+const SERVICIO_SOLICITUDES_URL = process.env.SERVICIO_SOLICITUDES_URL || 'http://servicio-solicitudes:3002';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secreto_super_seguro_para_la_clase';
-
+app.use(cors());
 app.use(express.json());
 
-// Middleware de autenticación centralizada
-const verificarToken = (rolesPermitidos?: string[]) => {
-  return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-       res.status(401).json({ error: 'Token no provisto o inválido' });
-       return;
-    }
+// Documentación con Swagger UI
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
-    const token = authHeader.split(' ')[1];
-    try {
-      // CORRECCIÓN: Ahora sí verificamos la firma real con la clave secreta
-      const decoded = jwt.verify(token, JWT_SECRET) as { id_usuario: string; rol: string };
+/**
+ * @openapi
+ * /:
+ *   get:
+ *     summary: Verificación del estado del API Gateway
+ *     description: Retorna un mensaje indicando que el Gateway está en ejecución.
+ *     responses:
+ *       200:
+ *         description: Servicio operando correctamente.
+ */
+app.get('/', (req: Request, res: Response) => {
+  res.json({ mensaje: 'API Gateway operando correctamente' });
+});
 
-      // Validar roles si la ruta lo requiere (ej. Solo Administrador)
-      if (rolesPermitidos && !rolesPermitidos.includes(decoded.rol)) {
-         res.status(403).json({ error: 'Acceso denegado: Permisos insuficientes' });
-         return;
-      }
+/**
+ * @openapi
+ * /auth/login:
+ *   post:
+ *     summary: Iniciar sesión y obtener JWT
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               usuario:
+ *                 type: string
+ *                 example: admin
+ *               contrasena:
+ *                 type: string
+ *                 example: 123456
+ *     responses:
+ *       200:
+ *         description: Autenticación exitosa, retorna el token JWT.
+ *       401:
+ *         description: Credenciales inválidas.
+ */
+app.post('/auth/login', (req: Request, res: Response) => {
+  const { usuario, contrasena } = req.body;
+  
+  if (usuario === 'admin' && contrasena === '123456') {
+    return res.json({ token: 'jwt-simulado-token-secret-12345' });
+  }
 
-      // Inyectar los datos en los headers para los microservicios internos
-      req.headers['x-user-id'] = decoded.id_usuario;
-      req.headers['x-user-role'] = decoded.rol;
-      next();
-    } catch (error) {
-       res.status(401).json({ error: 'Token inválido o firma incorrecta' });
-    }
-  };
-};
+  return res.status(401).json({ error: 'Credenciales inválidas' });
+});
 
-// --- RUTAS DE MASCOTAS (Mapeadas explícitamente para evitar el error 404) ---
+/**
+ * @openapi
+ * /mascotas:
+ *   get:
+ *     summary: Listar todas las mascotas
+ *     responses:
+ *       200:
+ *         description: Lista de mascotas registradas.
+ *   post:
+ *     summary: Registrar una nueva mascota
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Firulais
+ *               especie:
+ *                 type: string
+ *                 example: Perro
+ *               edad:
+ *                 type: string
+ *                 example: 2 años
+ *     responses:
+ *       201:
+ *         description: Mascota registrada exitosamente.
+ *       400:
+ *         description: Datos incompletos o erróneos.
+ *       401:
+ *         description: Token no provisto o no válido.
+ */
+app.get('/mascotas', async (req: Request, res: Response) => {
+  try {
+    const respuesta = await axios.get(`${SERVICIO_MASCOTAS_URL}/mascotas`);
+    return res.json(respuesta.data);
+  } catch (error: any) {
+    return res.status(error.response?.status || 500).json(error.response?.data || { error: 'Error al conectar con Servicio Mascotas' });
+  }
+});
 
-// GET /mascotas -> Público (Cualquiera puede ver)
-app.get('/mascotas', proxy(SERVICIO_MASCOTAS));
+app.post('/mascotas', async (req: Request, res: Response) => {
+  try {
+    const respuesta = await axios.post(`${SERVICIO_MASCOTAS_URL}/mascotas`, req.body, {
+      headers: { authorization: req.headers.authorization || '' }
+    });
+    return res.status(201).json(respuesta.data);
+  } catch (error: any) {
+    return res.status(error.response?.status || 500).json(error.response?.data || { error: 'Error al registrar mascota' });
+  }
+});
 
-// POST /mascotas -> Solo Administrador
-app.post('/mascotas', verificarToken(['Administrador']), proxy(SERVICIO_MASCOTAS));
-
-
-// --- RUTAS DE SOLICITUDES (Mapeadas explícitamente) ---
-
-// POST /solicitudes -> Usuario Autenticado
-app.post('/solicitudes', verificarToken(), proxy(SERVICIO_SOLICITUDES));
-
-// GET /solicitudes -> Solo Administrador
-app.get('/solicitudes', verificarToken(['Administrador']), proxy(SERVICIO_SOLICITUDES));
-
+/**
+ * @openapi
+ * /solicitudes:
+ *   post:
+ *     summary: Crear una nueva solicitud de adopción
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               id_mascota:
+ *                 type: string
+ *                 example: "1"
+ *               mensaje:
+ *                 type: string
+ *                 example: Tengo espacio en casa y cuento con disponibilidad para cuidarla.
+ *     responses:
+ *       201:
+ *         description: Solicitud de adopción enviada con éxito.
+ *       400:
+ *         description: El mensaje debe contener al menos 10 caracteres.
+ *       401:
+ *         description: Acceso no autorizado.
+ */
+app.post('/solicitudes', async (req: Request, res: Response) => {
+  try {
+    const respuesta = await axios.post(`${SERVICIO_SOLICITUDES_URL}/solicitudes`, req.body, {
+      headers: { authorization: req.headers.authorization || '' }
+    });
+    return res.status(201).json(respuesta.data);
+  } catch (error: any) {
+    return res.status(error.response?.status || 500).json(error.response?.data || { error: 'Error al procesar solicitud' });
+  }
+});
 
 app.listen(PORT, () => {
-  console.log(` API Gateway corriendo en el puerto ${PORT}`);
+  console.log(`[API Gateway] Escuchando en el puerto ${PORT}`);
+  console.log(`[Documentación] Swagger UI disponible en http://localhost:${PORT}/api-docs`);
 });

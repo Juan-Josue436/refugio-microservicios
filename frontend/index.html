@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Huellitas - Portal de Adopción de Mascotas</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Encabezado y Navegación -->
+  <header>
+    <div class="logo">🐾 <span>Huellitas</span></div>
+    <nav>
+      <button onclick="mostrarSeccion('mascotas-section')">Mascotas</button>
+      <button onclick="mostrarSeccion('nueva-mascota-section')">Registrar Mascota</button>
+      <button onclick="mostrarSeccion('solicitud-section')">Adoptar</button>
+      <button id="btn-auth" onclick="mostrarSeccion('login-section')" class="btn-highlight">Iniciar Sesión</button>
+    </nav>
+  </header>
+
+  <main class="container">
+
+    <!-- Notificaciones / Alert -->
+    <div id="alert-box" class="alert hidden"></div>
+
+    <!-- SECCIÓN 1: Catálogo de Mascotas -->
+    <section id="mascotas-section" class="seccion active">
+      <h2>Mascotas Disponibles para Adopción</h2>
+      <div class="filter-bar">
+        <button onclick="cargarMascotas()" class="btn-secondary">🔄 Actualizar Lista</button>
+      </div>
+      <div id="grid-mascotas" class="grid-mascotas">
+        <p class="loading">Cargando mascotas...</p>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 2: Autenticación / Login -->
+    <section id="login-section" class="seccion hidden">
+      <div class="card form-card">
+        <h2>🔑 Iniciar Sesión (Obtener Token JWT)</h2>
+        <form id="form-login">
+          <div class="form-group">
+            <label for="usuario">Usuario:</label>
+            <input type="text" id="usuario" value="admin" required>
+          </div>
+          <div class="form-group">
+            <label for="contrasena">Contraseña:</label>
+            <input type="password" id="contrasena" value="123456" required>
+          </div>
+          <button type="submit" class="btn-primary">Obtener JWT Token</button>
+        </form>
+        <div id="token-display" class="token-box hidden">
+          <strong>Token Obtenido:</strong>
+          <p id="jwt-token-text"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 3: Registrar Nueva Mascota -->
+    <section id="nueva-mascota-section" class="seccion hidden">
+      <div class="card form-card">
+        <h2>🐶 Registrar Nueva Mascota</h2>
+        <form id="form-mascota">
+          <div class="form-group">
+            <label for="nombre-mascota">Nombre:</label>
+            <input type="text" id="nombre-mascota" placeholder="Ej: Tobby" required>
+          </div>
+          <div class="form-group">
+            <label for="especie-mascota">Especie:</label>
+            <select id="especie-mascota" required>
+              <option value="Perro">Perro</option>
+              <option value="Gato">Gato</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="edad-mascota">Edad:</label>
+            <input type="text" id="edad-mascota" placeholder="Ej: 2 años" required>
+          </div>
+          <button type="submit" class="btn-primary">Guardar Mascota</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 4: Solicitar Adopción -->
+    <section id="solicitud-section" class="seccion hidden">
+      <div class="card form-card">
+        <h2>📩 Enviar Solicitud de Adopción</h2>
+        <form id="form-solicitud">
+          <div class="form-group">
+            <label for="id-mascota">ID de la Mascota:</label>
+            <input type="number" id="id-mascota" placeholder="Ej: 1" required>
+          </div>
+          <div class="form-group">
+            <label for="mensaje-solicitud">Mensaje / Motivo de Adopción (mínimo 10 caracteres):</label>
+            <textarea id="mensaje-solicitud" rows="4" placeholder="Tengo espacio suficiente en casa y experiencia cuidando mascotas..." required></textarea>
+          </div>
+          <button type="submit" class="btn-primary">Enviar Solicitud</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Sistema de Adopción de Mascotas &copy; 2026 - Backend con Arquitectura de Microservicios</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
