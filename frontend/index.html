@@ -9,20 +9,17 @@
 </head>
 <body>
 
-  <!-- Encabezado y Navegación -->
   <header>
     <div class="logo">🐾 <span>Huellitas</span></div>
     <nav>
       <button onclick="mostrarSeccion('mascotas-section')">Mascotas</button>
-      <button onclick="mostrarSeccion('nueva-mascota-section')">Registrar Mascota</button>
-      <button onclick="mostrarSeccion('solicitud-section')">Adoptar</button>
+      <button id="nav-registrar" onclick="mostrarSeccion('nueva-mascota-section')" class="hidden">Registrar Mascota</button>
+      <button id="nav-adoptar" onclick="mostrarSeccion('solicitud-section')" class="hidden">Adoptar</button>
       <button id="btn-auth" onclick="mostrarSeccion('login-section')" class="btn-highlight">Iniciar Sesión</button>
     </nav>
   </header>
 
   <main class="container">
-
-    <!-- Notificaciones / Alert -->
     <div id="alert-box" class="alert hidden"></div>
 
     <!-- SECCIÓN 1: Catálogo de Mascotas -->
@@ -39,17 +36,17 @@
     <!-- SECCIÓN 2: Autenticación / Login -->
     <section id="login-section" class="seccion hidden">
       <div class="card form-card">
-        <h2>🔑 Iniciar Sesión (Obtener Token JWT)</h2>
+        <h2>🔑 Iniciar Sesión</h2>
         <form id="form-login">
           <div class="form-group">
             <label for="usuario">Usuario:</label>
-            <input type="text" id="usuario" value="admin" required>
+            <input type="text" id="usuario" placeholder="admin o cliente" required>
           </div>
           <div class="form-group">
             <label for="contrasena">Contraseña:</label>
             <input type="password" id="contrasena" value="123456" required>
           </div>
-          <button type="submit" class="btn-primary">Obtener JWT Token</button>
+          <button type="submit" class="btn-primary">Iniciar Sesión</button>
         </form>
         <div id="token-display" class="token-box hidden">
           <strong>Token Obtenido:</strong>
@@ -58,7 +55,7 @@
       </div>
     </section>
 
-    <!-- SECCIÓN 3: Registrar Nueva Mascota -->
+    <!-- SECCIÓN 3: Registrar Nueva Mascota (Solo Admin) -->
     <section id="nueva-mascota-section" class="seccion hidden">
       <div class="card form-card">
         <h2>🐶 Registrar Nueva Mascota</h2>
@@ -84,24 +81,25 @@
       </div>
     </section>
 
-    <!-- SECCIÓN 4: Solicitar Adopción -->
+    <!-- SECCIÓN 4: Solicitar Adopción (Selección por Nombre) -->
     <section id="solicitud-section" class="seccion hidden">
       <div class="card form-card">
         <h2>📩 Enviar Solicitud de Adopción</h2>
         <form id="form-solicitud">
           <div class="form-group">
-            <label for="id-mascota">ID de la Mascota:</label>
-            <input type="number" id="id-mascota" placeholder="Ej: 1" required>
+            <label for="select-mascota">Selecciona la Mascota:</label>
+            <select id="select-mascota" required>
+              <option value="">Cargando lista...</option>
+            </select>
           </div>
           <div class="form-group">
             <label for="mensaje-solicitud">Mensaje / Motivo de Adopción (mínimo 10 caracteres):</label>
-            <textarea id="mensaje-solicitud" rows="4" placeholder="Tengo espacio suficiente en casa y experiencia cuidando mascotas..." required></textarea>
+            <textarea id="mensaje-solicitud" rows="4" placeholder="Tengo espacio suficiente en casa..." required></textarea>
           </div>
           <button type="submit" class="btn-primary">Enviar Solicitud</button>
         </form>
       </div>
     </section>
-
   </main>
 
   <footer>
