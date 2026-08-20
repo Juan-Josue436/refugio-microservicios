@@ -1,6 +1,7 @@
 const API_URL = 'http://localhost:3000';
 let tokenJWT = '';
 let rolUsuario = '';
+let userId = ''; // 👈 Almacena el ID del usuario autenticado
 let listaMascotas = [];
 
 function mostrarSeccion(idSeccion) {
@@ -33,7 +34,7 @@ async function cargarMascotas() {
   try {
     const res = await fetch(`${API_URL}/mascotas`);
     if (!res.ok) throw new Error('Error al obtener mascotas');
-   
+    
     listaMascotas = await res.json();
     grid.innerHTML = '';
 
@@ -45,7 +46,7 @@ async function cargarMascotas() {
     listaMascotas.forEach(mascota => {
       const card = document.createElement('div');
       card.className = 'card-mascota';
-     
+      
       let botonEliminarHTML = '';
       if (rolUsuario === 'admin') {
         botonEliminarHTML = `
@@ -104,7 +105,8 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
     if (!res.ok) throw new Error(data.error || 'Credenciales incorrectas');
 
     tokenJWT = data.token;
-    rolUsuario = usuario === 'admin' ? 'admin' : 'user';
+    userId = data.id || '2'; // 👈 Guarda el ID retornado por el API Gateway
+    rolUsuario = data.rol || (usuario === 'admin' ? 'admin' : 'user');
 
     document.getElementById('jwt-token-text').textContent = tokenJWT;
     document.getElementById('token-display').classList.remove('hidden');
@@ -187,7 +189,8 @@ document.getElementById('form-solicitud').addEventListener('submit', async (e) =
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenJWT}`
+        'Authorization': `Bearer ${tokenJWT}`,
+        'x-user-id': userId // 👈 Envía el ID de usuario requerido por servicio-solicitudes
       },
       body: JSON.stringify({ id_mascota, mensaje })
     });

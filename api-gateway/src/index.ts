@@ -4,6 +4,7 @@ import cors from 'cors';
 import axios from 'axios';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
+import usuarios from './usuarios.json';
 
 dotenv.config();
 
@@ -48,21 +49,31 @@ app.get('/', (req: Request, res: Response) => {
  *             properties:
  *               usuario:
  *                 type: string
- *                 example: admin
+ *                 example: cliente
  *               contrasena:
  *                 type: string
  *                 example: 123456
  *     responses:
  *       200:
- *         description: Autenticación exitosa, retorna el token JWT.
+ *         description: Autenticación exitosa, retorna el token JWT y datos de rol.
  *       401:
  *         description: Credenciales inválidas.
  */
 app.post('/auth/login', (req: Request, res: Response) => {
   const { usuario, contrasena } = req.body;
   
-  if (usuario === 'admin' && contrasena === '123456') {
-    return res.json({ token: 'jwt-simulado-token-secret-12345' });
+  // Buscar usuario en el archivo usuarios.json
+  const usuarioEncontrado = usuarios.find(
+    (u) => u.usuario === usuario && u.contrasena === contrasena
+  );
+
+  if (usuarioEncontrado) {
+    return res.json({ 
+      token: `jwt-simulado-token-${usuarioEncontrado.rol}-${usuarioEncontrado.id}`,
+      id: usuarioEncontrado.id, // 👈 Se agrega para que el frontend obtenga el ID
+      usuario: usuarioEncontrado.usuario,
+      rol: usuarioEncontrado.rol
+    });
   }
 
   return res.status(401).json({ error: 'Credenciales inválidas' });
@@ -126,6 +137,36 @@ app.post('/mascotas', async (req: Request, res: Response) => {
 
 /**
  * @openapi
+ * /mascotas/{id}:
+ *   delete:
+ *     summary: Eliminar una mascota por ID (Solo Administrador)
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Mascota eliminada correctamente.
+ *       401:
+ *         description: No autorizado.
+ */
+app.delete('/mascotas/:id', async (req: Request, res: Response) => {
+  try {
+    const respuesta = await axios.delete(`${SERVICIO_MASCOTAS_URL}/mascotas/${req.params.id}`, {
+      headers: { authorization: req.headers.authorization || '' }
+    });
+    return res.json(respuesta.data);
+  } catch (error: any) {
+    return res.status(error.response?.status || 500).json(error.response?.data || { error: 'Error al eliminar mascota' });
+  }
+});
+
+/**
+ * @openapi
  * /solicitudes:
  *   post:
  *     summary: Crear una nueva solicitud de adopción
@@ -154,9 +195,23 @@ app.post('/mascotas', async (req: Request, res: Response) => {
  */
 app.post('/solicitudes', async (req: Request, res: Response) => {
   try {
+    // 1. Guardar la solicitud de adopción
     const respuesta = await axios.post(`${SERVICIO_SOLICITUDES_URL}/solicitudes`, req.body, {
-      headers: { authorization: req.headers.authorization || '' }
+      headers: { 
+        authorization: req.headers.authorization || '',
+        'x-user-id': req.headers['x-user-id'] || ''
+      }
     });
+
+    // 2. Cambiar el estado de la mascota a "En Proceso"
+    if (req.body.id_mascota) {
+      await axios.put(`${SERVICIO_MASCOTAS_URL}/mascotas/${req.body.id_mascota}`, {
+        estado: 'En Proceso'
+      }).catch(err => {
+        console.warn('[API Gateway] No se pudo actualizar el estado de la mascota:', err.message);
+      });
+    }
+
     return res.status(201).json(respuesta.data);
   } catch (error: any) {
     return res.status(error.response?.status || 500).json(error.response?.data || { error: 'Error al procesar solicitud' });

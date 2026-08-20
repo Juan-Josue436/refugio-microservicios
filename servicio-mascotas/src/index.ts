@@ -91,6 +91,53 @@ app.post('/mascotas', async (req, res): Promise<void> => {
   }
 });
 
+// PUT /mascotas/:id - Actualizar estado de una mascota
+app.put('/mascotas/:id', async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { estado } = req.body;
+
+    if (!estado) {
+      res.status(400).json({ error: 'El campo estado es requerido' });
+      return;
+    }
+
+    const [result]: any = await pool.query(
+      'UPDATE mascotas SET estado = ? WHERE id = ?',
+      [estado, id]
+    );
+
+    if (result.affectedRows === 0) {
+      res.status(404).json({ error: 'Mascota no encontrada' });
+      return;
+    }
+
+    res.json({ mensaje: 'Estado de mascota actualizado correctamente', id, estado });
+  } catch (error) {
+    console.error('Error en PUT /mascotas/:id:', error);
+    res.status(500).json({ error: 'Error al actualizar la mascota' });
+  }
+});
+
+// DELETE /mascotas/:id - Eliminar una mascota por ID (NUEVO)
+app.delete('/mascotas/:id', async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params;
+
+    const [result]: any = await pool.query('DELETE FROM mascotas WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      res.status(404).json({ error: 'Mascota no encontrada' });
+      return;
+    }
+
+    res.json({ mensaje: 'Mascota eliminada correctamente', id });
+  } catch (error) {
+    console.error('Error en DELETE /mascotas/:id:', error);
+    res.status(500).json({ error: 'Error al eliminar la mascota de la base de datos' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🐶 Servicio de Mascotas escuchando en el puerto ${PORT}`);
 });
